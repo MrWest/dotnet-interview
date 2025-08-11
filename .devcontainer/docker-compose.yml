@@ -2,6 +2,8 @@ version: '3.8'
 
 services:
   app:
+    ports: 
+      - 7027:5000  # Maps host port 7027 to container port 5000
     image: mcr.microsoft.com/devcontainers/dotnet:8.0
     command: sleep infinity
     depends_on:

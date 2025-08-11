@@ -1,4 +1,4 @@
-﻿{
+{
   "iisSettings": {
     "windowsAuthentication": false,
     "anonymousAuthentication": true,
@@ -10,12 +10,12 @@
   "profiles": {
     "TodoApi": {
       "commandName": "Project",
-      "dotnetRunMessages": true,
       "launchBrowser": true,
       "applicationUrl": "https://localhost:7027;http://localhost:5083",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
-      }
+      },
+      "dotnetRunMessages": true
     },
     "IIS Express": {
       "commandName": "IISExpress",
