@@ -25,7 +25,7 @@ namespace TodoApi.Controllers
 
         // GET: api/todolists/5/items/3
         [HttpGet("{id}")]
-        public async Task<ActionResult<TodoListItem>> GetTodoList(long id)
+        public async Task<ActionResult<TodoListItem>> GetTodoListItem(long id)
         {
             var todoListItem = await _context.TodoListItem.FindAsync(id);
 
@@ -59,21 +59,21 @@ namespace TodoApi.Controllers
         // POST: api/todolists
         // To protect from over-posting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<TodoList>> PostTodoList([FromRoute] int todoListId, CreateTodoListItem payload)
+        public async Task<ActionResult<TodoListItem>> PostTodoListItem([FromRoute] int todoListId, CreateTodoListItem payload)
         {
             var todoList = await _context.TodoList.FirstOrDefaultAsync(x => x.Id == todoListId);
 
             if (todoList == null)
             {
-                 return NotFound();
+                return NotFound();
             }
-           
+
             var todoListItem = new TodoListItem { Name = payload.Name, Description = payload.Description, TodoList = todoList };
 
             _context.TodoListItem.Add(todoListItem);
             await _context.SaveChangesAsync();
 
-            return CreatedAtAction("GetTodoListItem", new { id = todoListItem.Id }, todoListItem);
+            return CreatedAtAction(nameof(GetTodoListItem), new { todoListId = todoListId, id = todoListItem.Id }, todoListItem);
         }
 
         // DELETE: api/todolists/5

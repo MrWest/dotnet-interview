@@ -8,5 +8,11 @@ public class TodoContext : DbContext
 
     public DbSet<TodoList> TodoList { get; set; } = default!;
     public DbSet<TodoListItem> TodoListItem { get; set; } = default!;
-    
+
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<TodoListItem>().ToTable("TodoListItems");
+    }
+
 }
