@@ -1,92 +1,133 @@
+using MediatR;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using TodoApi.Dtos;
-using TodoApi.Models;
+using TodoApi.Infrastructure;
+using TodoApi.Mediation.TodoList;
+using TodoApi.Mediation.TodoList.Dtos;
 
 namespace TodoApi.Controllers
 {
+    /// <summary>
+    /// Controller for managing TodoList operations using CQRS pattern.
+    /// </summary>
     [Route("api/todolists")]
     [ApiController]
-    public class TodoListsController : ControllerBase
+    public class TodoListsController : BaseController
     {
-        private readonly TodoContext _context;
+        private readonly IMediator _mediator;
 
-        public TodoListsController(TodoContext context)
+        /// <summary>
+        /// Initializes a new instance of the <see cref="TodoListsController"/> class.
+        /// </summary>
+        /// <param name="mediator">The mediator instance for handling commands and queries.</param>
+        public TodoListsController(IMediator mediator)
         {
-            _context = context;
+            _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
         }
 
-        // GET: api/todolists
+        /// <summary>
+        /// Gets all TodoLists.
+        /// </summary>
+        /// <param name="includeItems">Optional parameter to include TodoListItems in the response.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>A list of all TodoLists.</returns>
         [HttpGet]
-        public async Task<ActionResult<IList<TodoList>>> GetTodoLists()
+        public async Task<ActionResult<GetAllTodoListsQueryResponse>> GetTodoLists(
+            [FromQuery] bool includeItems = false,
+            CancellationToken cancellationToken = default)
         {
-            return Ok(await _context.TodoList.ToListAsync());
+            var query = new GetAllTodoListsQuery
+            {
+                IncludeItems = includeItems
+            };
+
+            var result = await _mediator.Send(query, cancellationToken);
+            return ServiceResult(result);
         }
 
-        // GET: api/todolists/5
+        /// <summary>
+        /// Gets a specific TodoList by ID.
+        /// </summary>
+        /// <param name="id">The ID of the TodoList to retrieve.</param>
+        /// <param name="includeItems">Optional parameter to include TodoListItems in the response.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>The TodoList with the specified ID.</returns>
         [HttpGet("{id}")]
-        public async Task<ActionResult<TodoList>> GetTodoList(long id)
+        public async Task<ActionResult<GetTodoListQueryResponse>> GetTodoList(
+            long id,
+            [FromQuery] bool includeItems = false,
+            CancellationToken cancellationToken = default)
         {
-            var todoList = await _context.TodoList.FindAsync(id);
-
-            if (todoList == null)
+            var query = new GetTodoListQuery
             {
-                return NotFound();
-            }
+                Id = id,
+                IncludeItems = includeItems
+            };
 
-            return Ok(todoList);
+            var result = await _mediator.Send(query, cancellationToken);
+            return ServiceResult(result);
         }
 
-        // PUT: api/todolists/5
-        // To protect from over-posting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
+        /// <summary>
+        /// Updates an existing TodoList.
+        /// </summary>
+        /// <param name="id">The ID of the TodoList to update.</param>
+        /// <param name="dto">The update data transfer object.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>The updated TodoList information.</returns>
         [HttpPut("{id}")]
-        public async Task<ActionResult> PutTodoList(long id, UpdateTodoList payload)
+        public async Task<ActionResult<UpdateTodoListCommandResponse>> PutTodoList(
+            long id,
+            [FromBody] UpdateTodoListDto dto,
+            CancellationToken cancellationToken = default)
         {
-            var todoList = await _context.TodoList.FindAsync(id);
-
-            if (todoList == null)
+            var command = new UpdateTodoListCommand
             {
-                return NotFound();
-            }
+                Id = id,
+                Name = dto.Name
+            };
 
-            todoList.Name = payload.Name;
-            await _context.SaveChangesAsync();
-
-            return Ok(todoList);
+            var result = await _mediator.Send(command, cancellationToken);
+            return ServiceResult(result);
         }
 
-        // POST: api/todolists
-        // To protect from over-posting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
+        /// <summary>
+        /// Creates a new TodoList.
+        /// </summary>
+        /// <param name="dto">The creation data transfer object.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>The created TodoList information.</returns>
         [HttpPost]
-        public async Task<ActionResult<TodoList>> PostTodoList(CreateTodoList payload)
+        public async Task<ActionResult<TodoListCreateCommandResponse>> PostTodoList(
+            [FromBody] CreateTodoListDto dto,
+            CancellationToken cancellationToken = default)
         {
-            var todoList = new TodoList { Name = payload.Name };
-
-            _context.TodoList.Add(todoList);
-            await _context.SaveChangesAsync();
-
-            return CreatedAtAction("GetTodoList", new { id = todoList.Id }, todoList);
-        }
-
-        // DELETE: api/todolists/5
-        [HttpDelete("{id}")]
-        public async Task<ActionResult> DeleteTodoList(long id)
-        {
-            var todoList = await _context.TodoList.FindAsync(id);
-            if (todoList == null)
+            var command = new TodoListCreateCommand
             {
-                return NotFound();
-            }
+                Name = dto.Name
+            };
 
-            _context.TodoList.Remove(todoList);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
+            var result = await _mediator.Send(command, cancellationToken);
+            return ServiceResult(result);
         }
 
-        private bool TodoListExists(long id)
+        /// <summary>
+        /// Deletes a TodoList.
+        /// </summary>
+        /// <param name="id">The ID of the TodoList to delete.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>Confirmation of the deletion.</returns>
+        [HttpDelete("{id}")]
+        public async Task<ActionResult<DeleteTodoListCommandResponse>> DeleteTodoList(
+            long id,
+            CancellationToken cancellationToken = default)
         {
-            return (_context.TodoList?.Any(e => e.Id == id)).GetValueOrDefault();
+            var command = new DeleteTodoListCommand
+            {
+                Id = id
+            };
+
+            var result = await _mediator.Send(command, cancellationToken);
+            return ServiceResult(result);
         }
     }
 }
