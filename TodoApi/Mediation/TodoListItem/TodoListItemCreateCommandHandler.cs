@@ -82,13 +82,15 @@ namespace TodoApi.Mediation.TodoListItem
                         $"TodoList with ID {command.TodoListId} not found");
                 }
 
-                // Generate the next available ID for this TodoList (composite key requirement)
-                var maxId = await _dbContext.TodoListItem
+                // Generate the next available ID for this TodoList (FIXED VERSION)
+                var existingIds = await _dbContext.TodoListItem
                     .Where(item => item.TodoListId == command.TodoListId)
                     .Select(item => item.Id)
-                    .DefaultIfEmpty(0)
-                    .MaxAsync(cancellationToken)
+                    .ToListAsync(cancellationToken)
                     .ConfigureAwait(false);
+
+                var maxId = existingIds.Any() ? existingIds.Max() : 0;
+
 
                 // Create the new TodoListItem
                 var todoListItem = new Models.TodoListItem

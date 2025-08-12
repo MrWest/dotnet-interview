@@ -1,96 +1,174 @@
+using MediatR;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using TodoApi.Dtos;
-using TodoApi.Models;
+using TodoApi.Infrastructure;
+using TodoApi.Mediation.TodoListItem;
+using TodoApi.Mediation.TodoListItem.Dtos;
 
 namespace TodoApi.Controllers
 {
+    /// <summary>
+    /// Controller for managing TodoListItem operations using CQRS pattern.
+    /// Handles all CRUD operations for items within specific TodoLists.
+    /// </summary>
     [Route("api/todolists/{todoListId}/items")]
     [ApiController]
-    public class TodoListsItemController : ControllerBase
+    public class TodoListItemController : BaseController
     {
-        private readonly TodoContext _context;
+        private readonly IMediator _mediator;
 
-        public TodoListsItemController(TodoContext context)
+        /// <summary>
+        /// Initializes a new instance of the <see cref="TodoListItemController"/> class.
+        /// </summary>
+        /// <param name="mediator">The mediator instance for handling commands and queries.</param>
+        public TodoListItemController(IMediator mediator)
         {
-            _context = context;
+            _mediator = mediator ?? throw new ArgumentNullException(nameof(mediator));
         }
 
-        // GET: api/todolists/5/items
+        /// <summary>
+        /// Gets all TodoListItems for a specific TodoList with optional filtering and pagination.
+        /// </summary>
+        /// <param name="todoListId">The ID of the parent TodoList.</param>
+        /// <param name="includeTodoList">Optional parameter to include parent TodoList information.</param>
+        /// <param name="completedFilter">Optional filter for completion status (null = all, true = completed, false = incomplete).</param>
+        /// <param name="page">Page number for pagination (default: 1).</param>
+        /// <param name="pageSize">Page size for pagination (default: 50, max: 100).</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>A paginated list of TodoListItems for the specified TodoList.</returns>
         [HttpGet]
-        public async Task<ActionResult<IList<TodoListItem>>> GetTodoListItems()
+        public async Task<ActionResult<GetAllTodoListItemsQueryResponse>> GetTodoListItems(
+            [FromRoute] long todoListId,
+            [FromQuery] bool includeTodoList = false,
+            [FromQuery] bool? completedFilter = null,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 50,
+            CancellationToken cancellationToken = default)
         {
-            return Ok(await _context.TodoListItem.ToListAsync());
+            var query = new GetAllTodoListItemsQuery
+            {
+                TodoListId = todoListId,
+                IncludeTodoList = includeTodoList,
+                CompletedFilter = completedFilter,
+                Page = page,
+                PageSize = pageSize
+            };
+
+            var result = await _mediator.Send(query, cancellationToken);
+            return ServiceResult(result);
         }
 
-        // GET: api/todolists/5/items/3
+        /// <summary>
+        /// Gets a specific TodoListItem by composite key (TodoListId + ItemId).
+        /// </summary>
+        /// <param name="todoListId">The ID of the parent TodoList.</param>
+        /// <param name="id">The ID of the TodoListItem to retrieve.</param>
+        /// <param name="includeTodoList">Optional parameter to include parent TodoList information.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>The TodoListItem with the specified composite key.</returns>
         [HttpGet("{id}")]
-        public async Task<ActionResult<TodoListItem>> GetTodoListItem(long id)
+        public async Task<ActionResult<GetTodoListItemQueryResponse>> GetTodoListItem(
+            [FromRoute] long todoListId,
+            [FromRoute] long id,
+            [FromQuery] bool includeTodoList = false,
+            CancellationToken cancellationToken = default)
         {
-            var todoListItem = await _context.TodoListItem.FindAsync(id);
-
-            if (todoListItem == null)
+            var query = new GetTodoListItemQuery
             {
-                return NotFound();
-            }
+                TodoListId = todoListId,
+                Id = id,
+                IncludeTodoList = includeTodoList
+            };
 
-            return Ok(todoListItem);
+            var result = await _mediator.Send(query, cancellationToken);
+            return ServiceResult(result);
         }
 
-        // PUT: api/todolists/5/items/4
-        // To protect from over-posting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
+        /// <summary>
+        /// Updates an existing TodoListItem with comprehensive field support.
+        /// </summary>
+        /// <param name="todoListId">The ID of the parent TodoList.</param>
+        /// <param name="id">The ID of the TodoListItem to update.</param>
+        /// <param name="dto">The update data transfer object containing all updatable fields.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>The updated TodoListItem information with timestamp.</returns>
         [HttpPut("{id}")]
-        public async Task<ActionResult> PutTodoList(long id, UpdateTodoListItem payload)
+        public async Task<ActionResult<UpdateTodoListItemCommandResponse>> PutTodoListItem(
+            [FromRoute] long todoListId,
+            [FromRoute] long id,
+            [FromBody] UpdateTodoListItemDto dto,
+            CancellationToken cancellationToken = default)
         {
-            var todoListItem = await _context.TodoListItem.FindAsync(id);
-
-            if (todoListItem == null)
+            var command = new UpdateTodoListItemCommand
             {
-                return NotFound();
-            }
+                TodoListId = todoListId,
+                Id = id,
+                Name = dto.Name,
+                Description = dto.Description,
+                Completed = dto.Completed,
+                Progress = dto.Progress
+            };
 
-            todoListItem.Name = payload.Name;
-            todoListItem.Description = payload.Description;
-            await _context.SaveChangesAsync();
-
-            return Ok(todoListItem);
+            var result = await _mediator.Send(command, cancellationToken);
+            return ServiceResult(result);
         }
 
-        // POST: api/todolists
-        // To protect from over-posting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
+        /// <summary>
+        /// Creates a new TodoListItem within the specified TodoList.
+        /// </summary>
+        /// <param name="todoListId">The ID of the parent TodoList.</param>
+        /// <param name="dto">The creation data transfer object.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>The created TodoListItem information with proper location header.</returns>
         [HttpPost]
-        public async Task<ActionResult<TodoListItem>> PostTodoListItem([FromRoute] int todoListId, CreateTodoListItem payload)
+        public async Task<ActionResult<TodoListItemCreateCommandResponse>> PostTodoListItem(
+            [FromRoute] long todoListId,
+            [FromBody] CreateTodoListItemDto dto,
+            CancellationToken cancellationToken = default)
         {
-            var todoList = await _context.TodoList.FirstOrDefaultAsync(x => x.Id == todoListId);
-
-            if (todoList == null)
+            var command = new TodoListItemCreateCommand
             {
-                return NotFound();
+                TodoListId = todoListId,
+                Name = dto.Name,
+                Description = dto.Description,
+                Completed = dto.Completed,
+                Progress = dto.Progress
+            };
+
+            var result = await _mediator.Send(command, cancellationToken);
+            
+            // Return CreatedAtAction with proper location header for RESTful compliance
+            if (result.IsSuccess && result.Data != null)
+            {
+                return CreatedAtAction(
+                    nameof(GetTodoListItem),
+                    new { todoListId = todoListId, id = result.Data.Id },
+                    result.Data);
             }
 
-            var todoListItem = new TodoListItem { Name = payload.Name, Description = payload.Description, TodoList = todoList };
-
-            _context.TodoListItem.Add(todoListItem);
-            await _context.SaveChangesAsync();
-
-            return CreatedAtAction(nameof(GetTodoListItem), new { todoListId = todoListId, id = todoListItem.Id }, todoListItem);
+            return ServiceResult(result);
         }
 
-        // DELETE: api/todolists/5
+        /// <summary>
+        /// Deletes a TodoListItem using composite key validation.
+        /// </summary>
+        /// <param name="todoListId">The ID of the parent TodoList.</param>
+        /// <param name="id">The ID of the TodoListItem to delete.</param>
+        /// <param name="cancellationToken">The cancellation token.</param>
+        /// <returns>Confirmation of the deletion with audit information.</returns>
         [HttpDelete("{id}")]
-        public async Task<ActionResult> DeleteTodoList(long id)
+        public async Task<ActionResult<DeleteTodoListItemCommandResponse>> DeleteTodoListItem(
+            [FromRoute] long todoListId,
+            [FromRoute] long id,
+            CancellationToken cancellationToken = default)
         {
-            var todoListItem = await _context.TodoListItem.FindAsync(id);
-            if (todoListItem == null)
+            var command = new DeleteTodoListItemCommand
             {
-                return NotFound();
-            }
+                TodoListId = todoListId,
+                Id = id
+            };
 
-            _context.TodoListItem.Remove(todoListItem);
-            await _context.SaveChangesAsync();
-
-            return NoContent();
+            var result = await _mediator.Send(command, cancellationToken);
+            return ServiceResult(result);
         }
-
     }
 }
