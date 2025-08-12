@@ -95,7 +95,7 @@ namespace TodoApi.Controllers
         /// </summary>
         /// <param name="dto">The creation data transfer object.</param>
         /// <param name="cancellationToken">The cancellation token.</param>
-        /// <returns>The created TodoList information.</returns>
+        /// <returns>The created TodoList information with proper location header.</returns>
         [HttpPost]
         public async Task<ActionResult<TodoListCreateCommandResponse>> PostTodoList(
             [FromBody] CreateTodoListDto dto,
@@ -107,8 +107,19 @@ namespace TodoApi.Controllers
             };
 
             var result = await _mediator.Send(command, cancellationToken);
+
+            // Return CreatedAtAction with proper location header for RESTful compliance
+            if (result.IsSuccess && result.Data != null)
+            {
+                return CreatedAtAction(
+                    nameof(GetTodoList),
+                    new { id = result.Data.Id },
+                    result.Data);
+            }
+
             return ServiceResult(result);
         }
+
 
         /// <summary>
         /// Deletes a TodoList.
