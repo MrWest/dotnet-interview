@@ -82,20 +82,20 @@ namespace TodoApi.Mediation.TodoListItem
                         $"TodoList with ID {command.TodoListId} not found");
                 }
 
-                // Generate the next available ID for this TodoList (FIXED VERSION)
-                var existingIds = await _dbContext.TodoListItem
-                    .Where(item => item.TodoListId == command.TodoListId)
-                    .Select(item => item.Id)
-                    .ToListAsync(cancellationToken)
-                    .ConfigureAwait(false);
+                // // Generate the next available ID for this TodoList (FIXED VERSION)
+                // var existingIds = await _dbContext.TodoListItem
+                //     .Where(item => item.TodoListId == command.TodoListId)
+                //     .Select(item => item.Id)
+                //     .ToListAsync(cancellationToken)
+                //     .ConfigureAwait(false);
 
-                var maxId = existingIds.Any() ? existingIds.Max() : 0;
+                // var maxId = existingIds.Any() ? existingIds.Max() : 0;
 
 
                 // Create the new TodoListItem
                 var todoListItem = new Models.TodoListItem
                 {
-                    Id = maxId + 1,
+                    // Id = maxId + 1,
                     TodoListId = command.TodoListId,
                     Name = command.Name.Trim(),
                     Description = command.Description?.Trim() ?? string.Empty,

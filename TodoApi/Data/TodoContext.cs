@@ -12,7 +12,23 @@ public class TodoContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<TodoListItem>().ToTable("TodoListItems");
+        base.OnModelCreating(modelBuilder);
+
+        // Configure TodoListItem with single primary key (much simpler!)
+        modelBuilder.Entity<TodoListItem>()
+            .HasKey(item => item.Id); // Single auto-increment primary key
+
+        // Configure the relationship
+        modelBuilder.Entity<TodoListItem>()
+            .HasOne(item => item.TodoList)
+            .WithMany(list => list.Items)
+            .HasForeignKey(item => item.TodoListId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        // Add indexes for performance
+        modelBuilder.Entity<TodoListItem>()
+            .HasIndex(item => item.TodoListId);
     }
+
 
 }

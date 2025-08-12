@@ -32,12 +32,12 @@ namespace TodoApi.Mediation.TodoListItem
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>A service result containing the updated TodoListItem information.</returns>
         public async Task<ServiceResult<UpdateTodoListItemCommandResponse>> Handle(
-            UpdateTodoListItemCommand command, 
+            UpdateTodoListItemCommand command,
             CancellationToken cancellationToken)
         {
             try
             {
-                _logger.LogInformation("Updating TodoListItem with ID: {Id} in TodoList: {TodoListId}, new name: {Name}", 
+                _logger.LogInformation("Updating TodoListItem with ID: {Id} in TodoList: {TodoListId}, new name: {Name}",
                     command.Id, command.TodoListId, command.Name);
 
                 // Validate input
@@ -82,8 +82,9 @@ namespace TodoApi.Mediation.TodoListItem
 
                 // Find the existing TodoListItem using composite key
                 var todoListItem = await _dbContext.TodoListItem
-                    .FirstOrDefaultAsync(item => item.TodoListId == command.TodoListId && item.Id == command.Id, cancellationToken)
+                    .FirstOrDefaultAsync(item => item.Id == command.Id && item.TodoListId == command.TodoListId, cancellationToken)
                     .ConfigureAwait(false);
+
 
                 if (todoListItem == null)
                 {

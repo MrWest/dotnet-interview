@@ -32,7 +32,7 @@ namespace TodoApi.Mediation.TodoListItem
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>A service result containing the deletion confirmation.</returns>
         public async Task<ServiceResult<DeleteTodoListItemCommandResponse>> Handle(
-            DeleteTodoListItemCommand command, 
+            DeleteTodoListItemCommand command,
             CancellationToken cancellationToken)
         {
             try
@@ -52,10 +52,11 @@ namespace TodoApi.Mediation.TodoListItem
                     return ServiceResult<DeleteTodoListItemCommandResponse>.Failure("Invalid TodoListItem ID", 400);
                 }
 
-                // Find the existing TodoListItem using composite key
+                // Find the existing TodoListItem using composite key 
                 var todoListItem = await _dbContext.TodoListItem
-                    .FirstOrDefaultAsync(item => item.TodoListId == command.TodoListId && item.Id == command.Id, cancellationToken)
+                    .FirstOrDefaultAsync(item => item.Id == command.Id && item.TodoListId == command.TodoListId, cancellationToken)
                     .ConfigureAwait(false);
+
 
                 if (todoListItem == null)
                 {

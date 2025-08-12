@@ -4,7 +4,7 @@ using TodoApi.Infrastructure;
 
 namespace TodoApi.Mediation.TodoListItem
 {
-     /// <summary>
+    /// <summary>
     /// Handles the retrieval of a single TodoListItem.
     /// </summary>
     public class GetTodoListItemQueryHandler : IRequestHandler<GetTodoListItemQuery, ServiceResult<GetTodoListItemQueryResponse>>
@@ -32,12 +32,12 @@ namespace TodoApi.Mediation.TodoListItem
         /// <param name="cancellationToken">The cancellation token.</param>
         /// <returns>A service result containing the TodoListItem.</returns>
         public async Task<ServiceResult<GetTodoListItemQueryResponse>> Handle(
-            GetTodoListItemQuery query, 
+            GetTodoListItemQuery query,
             CancellationToken cancellationToken)
         {
             try
             {
-                _logger.LogInformation("Retrieving TodoListItem with ID: {Id} from TodoList: {TodoListId}, IncludeTodoList: {IncludeTodoList}", 
+                _logger.LogInformation("Retrieving TodoListItem with ID: {Id} from TodoList: {TodoListId}, IncludeTodoList: {IncludeTodoList}",
                     query.Id, query.TodoListId, query.IncludeTodoList);
 
                 // Validate input
@@ -62,9 +62,12 @@ namespace TodoApi.Mediation.TodoListItem
                     queryable = queryable.Include(item => item.TodoList);
                 }
 
+
                 var todoListItem = await queryable
+                    .Where(item => item.Id == query.Id && item.TodoListId == query.TodoListId) // Still validate TodoListId for security
                     .FirstOrDefaultAsync(cancellationToken)
                     .ConfigureAwait(false);
+
 
                 if (todoListItem == null)
                 {
