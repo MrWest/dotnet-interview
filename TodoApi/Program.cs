@@ -10,13 +10,30 @@ builder.Services.AddDbContext<TodoContext>(opt =>
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddControllers();
-builder.Services.AddMediatRServices(); // Add MediatR services
+builder.Services.AddMediatRServices();
+
+// Add synchronization services
+builder.Services.AddSynchronizationServices(builder.Configuration);
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 
 var app = builder.Build();
 
+// Configure the HTTP request pipeline
+if (app.Environment.IsDevelopment())
+{
+    app.UseDeveloperExceptionPage();
+}
+
 app.UseAuthorization();
 app.MapControllers();
+
+// Ensure database is created and migrations are applied
+using (var scope = app.Services.CreateScope())
+{
+    var context = scope.ServiceProvider.GetRequiredService<TodoContext>();
+    context.Database.EnsureCreated();
+}
+
 app.Run();
