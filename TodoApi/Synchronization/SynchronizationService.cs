@@ -229,9 +229,9 @@ namespace TodoApi.Synchronization
                         });
                     }
                 }
-
+                _dbContext.SetSyncMode(true);
                 await _dbContext.SaveChangesAsync(cancellationToken);
-
+                _dbContext.SetSyncMode(false);
                 var duration = DateTime.UtcNow - startTime;
                 var isSuccess = errors.Count == 0;
 
@@ -306,7 +306,9 @@ namespace TodoApi.Synchronization
                     }
                 }
 
+                _dbContext.SetSyncMode(true);
                 await _dbContext.SaveChangesAsync(cancellationToken);
+                _dbContext.SetSyncMode(false);
 
                 var duration = DateTime.UtcNow - startTime;
                 var isSuccess = errors.Count == 0;
@@ -379,9 +381,11 @@ namespace TodoApi.Synchronization
             else
             {
                 // Check for conflicts and update if needed
-                if (externalList.UpdatedAt > localList.UpdatedAt)
+                // externalList.UpdatedAt > localList.UpdatedAt
+                if (externalList.UpdatedAt.HasValue && localList.UpdatedAt.HasValue
+                    && externalList.UpdatedAt.Value > localList.UpdatedAt.Value)
                 {
-                    if (localList.UpdatedAt > localList.LastSyncedAt)
+                    if (localList.LastSyncedAt.HasValue && localList.UpdatedAt.Value > localList.LastSyncedAt.Value)
                     {
                         // Conflict detected - external and local both modified since last sync
                         conflicts.Add(new SyncConflict
@@ -389,15 +393,16 @@ namespace TodoApi.Synchronization
                             EntityType = "TodoList",
                             EntityId = localList.Id.ToString(),
                             ConflictDescription = $"Both external and local TodoList modified. External: {externalList.UpdatedAt}, Local: {localList.UpdatedAt}",
-                            Resolution = "External version takes precedence (last-write-wins)"
+                            Resolution = $"External version takes precedence (last-write-wins)"
                         });
                     }
 
                     // Update local with external data
                     localList.Name = externalList.Name;
                     localList.UpdatedAt = externalList.UpdatedAt;
-                    localList.LastSyncedAt = DateTime.UtcNow;
-                    localList.IsSynced = true;
+                    //localList.LastSyncedAt = DateTime.UtcNow;
+                    //localList.IsSynced = true;
+                    localList.MarkAsSynced();
 
                     statistics.TodoListsPulled++;
                     _logger.LogDebug("Updated local TodoList {LocalId} from external ID {ExternalId}", localList.Id, externalList.Id);
@@ -454,7 +459,7 @@ namespace TodoApi.Synchronization
                 // Check for conflicts and update if needed
                 if (externalItem.UpdatedAt > localItem.UpdatedAt)
                 {
-                    if (localItem.UpdatedAt > localItem.LastSyncedAt)
+                    if (localItem.LastSyncedAt.HasValue && localItem.UpdatedAt > localItem.LastSyncedAt.Value)
                     {
                         // Conflict detected
                         conflicts.Add(new SyncConflict
@@ -508,15 +513,13 @@ namespace TodoApi.Synchronization
                 var externalList = await _externalApiClient.CreateTodoListAsync(createRequest, cancellationToken);
 
                 localList.ExternalId = externalList.Id.ToString();
-                localList.LastSyncedAt = DateTime.UtcNow;
-                localList.IsSynced = true;
+                localList.MarkAsSynced();
 
                 // Update items with external IDs
                 for (int i = 0; i < localList.Items.Count && i < externalList.TodoItems.Count; i++)
                 {
                     localList.Items.ElementAt(i).ExternalId = externalList.TodoItems[i].Id.ToString();
-                    localList.Items.ElementAt(i).LastSyncedAt = DateTime.UtcNow;
-                    localList.Items.ElementAt(i).IsSynced = true;
+                    localList.Items.ElementAt(i).MarkAsSynced();
                 }
 
                 statistics.TodoListsPushed++;
@@ -536,8 +539,9 @@ namespace TodoApi.Synchronization
 
                     await _externalApiClient.UpdateTodoListAsync(long.Parse(localList.ExternalId), updateRequest, cancellationToken);
 
-                    localList.LastSyncedAt = DateTime.UtcNow;
-                    localList.IsSynced = true;
+                    //localList.LastSyncedAt = DateTime.UtcNow;
+                    //localList.IsSynced = true;
+                    localList.MarkAsSynced();
                     statistics.TodoListsPushed++;
 
                     _logger.LogDebug("Updated external TodoList {ExternalId} for local ID {LocalId}", localList.ExternalId, localList.Id);

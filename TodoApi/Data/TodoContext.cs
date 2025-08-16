@@ -9,6 +9,7 @@ namespace TodoApi.Data
 
         public DbSet<TodoList> TodoList { get; set; } = default!;
         public DbSet<TodoListItem> TodoListItem { get; set; } = default!;
+        private bool _isSyncOperation = false;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -115,10 +116,19 @@ namespace TodoApi.Data
                     
                     case EntityState.Modified:
                         entry.Entity.UpdatedAt = DateTime.UtcNow;
-                        entry.Entity.IsSynced = false; // Mark as needing sync
+                        if (!_isSyncOperation) // Respeta modo sync
+                        {
+                            entry.Entity.IsSynced = false;
+                        }
                         break;
                 }
             }
         }
+
+        public void SetSyncMode(bool isSyncMode)
+        {
+            _isSyncOperation = isSyncMode;
+        }
+
     }
 }

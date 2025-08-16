@@ -156,8 +156,8 @@ namespace TodoApi.Tests.Synchronization
         {
             // Arrange
             var baseTime = DateTime.UtcNow.AddHours(-2);
-            var localUpdateTime = DateTime.UtcNow.AddMinutes(-30);
-            var externalUpdateTime = DateTime.UtcNow.AddMinutes(-15);
+            var localUpdateTime = DateTime.UtcNow.AddMinutes(0);
+            var externalUpdateTime = DateTime.UtcNow.AddMinutes(15);
             
             // Create local TodoList that was modified after last sync (conflict scenario)
             var localTodoList = new TodoList
@@ -232,7 +232,7 @@ namespace TodoApi.Tests.Synchronization
             // Arrange
             var localTodoList = new TodoList
             {
-                Name = "New Local List",
+                Name = "New Local Lis XXt",
                 SourceId = "local-system",
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
@@ -241,7 +241,7 @@ namespace TodoApi.Tests.Synchronization
                 {
                     new TodoListItem
                     {
-                        Name = "Local Item",
+                        Name = "Local Item X",
                         Description = "Local Description",
                         Completed = false,
                         Progress = 50,
@@ -293,9 +293,11 @@ namespace TodoApi.Tests.Synchronization
                 .Include(tl => tl.Items)
                 .FirstOrDefaultAsync();
 
+           
             Assert.NotNull(updatedLocalList);
             Assert.Equal("100", updatedLocalList.ExternalId);
             Assert.True(updatedLocalList.IsSynced);
+            // Assert.Contains("External versionX", $"TL: {updatedLocalList.Name}-{updatedLocalList.Items.Count} {updatedLocalList.LastSyncedAt}");
 
             var updatedLocalItem = updatedLocalList.Items.First();
             Assert.Equal("200", updatedLocalItem.ExternalId);
