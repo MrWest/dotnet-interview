@@ -8,6 +8,7 @@ using TodoApi.ExternalApi.Models;
 using TodoApi.Models;
 using TodoApi.Synchronization;
 using TodoApi.Synchronization.Models;
+using TodoApi.ExternalApi.Models.Requests;
 
 namespace TodoApi.Tests.Synchronization
 {
@@ -319,9 +320,22 @@ namespace TodoApi.Tests.Synchronization
             _dbContext.TodoList.Add(localTodoList);
             await _dbContext.SaveChangesAsync();
 
+
+
+
+            var updatedExternalList = new ExternalTodoList
+            {
+                Id = 100,
+                Name = "Updated Local List",
+                SourceId = "local-todo-api",
+                CreatedAt = DateTime.UtcNow.AddHours(-1),
+                UpdatedAt = DateTime.UtcNow,
+                TodoItems = new List<ExternalTodoItem>()
+            };
+
             _mockExternalApiClient
                 .Setup(x => x.UpdateTodoListAsync(100, It.IsAny<UpdateTodoListRequest>(), It.IsAny<CancellationToken>()))
-                .Returns(Task.CompletedTask);
+                .ReturnsAsync(updatedExternalList);
 
             // Act
             var result = await _synchronizationService.PushToExternalAsync();
@@ -490,6 +504,7 @@ namespace TodoApi.Tests.Synchronization
                     new TodoListItem
                     {
                         Name = "Unsynced Item",
+                        Description = "Unsynced Todo List Item",
                         IsSynced = false,
                         CreatedAt = DateTime.UtcNow,
                         UpdatedAt = DateTime.UtcNow

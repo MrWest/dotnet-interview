@@ -91,7 +91,7 @@ namespace TodoApi.ExternalApi
         }
 
         /// <inheritdoc />
-        public async Task<ExternalTodoList> UpdateTodoListAsync(string externalId, UpdateTodoListRequest request, CancellationToken cancellationToken = default)
+        public async Task<ExternalTodoList> UpdateTodoListAsync(long externalId, UpdateTodoListRequest request, CancellationToken cancellationToken = default)
         {
             _logger.LogInformation("Updating TodoList {ExternalId} in external API", externalId);
 
@@ -117,7 +117,7 @@ namespace TodoApi.ExternalApi
         }
 
         /// <inheritdoc />
-        public async Task DeleteTodoListAsync(string externalId, CancellationToken cancellationToken = default)
+        public async Task DeleteTodoListAsync(long externalId, CancellationToken cancellationToken = default)
         {
             _logger.LogInformation("Deleting TodoList {ExternalId} from external API", externalId);
 
@@ -136,7 +136,7 @@ namespace TodoApi.ExternalApi
         }
 
         /// <inheritdoc />
-        public async Task<ExternalTodoItem> UpdateTodoItemAsync(string listExternalId, string itemExternalId, UpdateTodoItemRequest request, CancellationToken cancellationToken = default)
+        public async Task<ExternalTodoItem> UpdateTodoItemAsync(long listExternalId, long itemExternalId, UpdateTodoItemRequest request, CancellationToken cancellationToken = default)
         {
             _logger.LogInformation("Updating TodoItem {ItemExternalId} in TodoList {ListExternalId} via external API", itemExternalId, listExternalId);
 
@@ -162,7 +162,7 @@ namespace TodoApi.ExternalApi
         }
 
         /// <inheritdoc />
-        public async Task DeleteTodoItemAsync(string listExternalId, string itemExternalId, CancellationToken cancellationToken = default)
+        public async Task DeleteTodoItemAsync(long listExternalId, long itemExternalId, CancellationToken cancellationToken = default)
         {
             _logger.LogInformation("Deleting TodoItem {ItemExternalId} from TodoList {ListExternalId} via external API", itemExternalId, listExternalId);
 

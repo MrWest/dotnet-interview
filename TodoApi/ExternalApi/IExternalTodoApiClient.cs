@@ -31,14 +31,14 @@ namespace TodoApi.ExternalApi
         /// <param name="request">The update request containing new values.</param>
         /// <param name="cancellationToken">Cancellation token for the operation.</param>
         /// <returns>The updated TodoList as returned by the external API.</returns>
-        Task<ExternalTodoList> UpdateTodoListAsync(string externalId, UpdateTodoListRequest request, CancellationToken cancellationToken = default);
+        Task<ExternalTodoList> UpdateTodoListAsync(long externalId, UpdateTodoListRequest request, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Deletes a TodoList and all its items from the external API.
         /// </summary>
         /// <param name="externalId">The external ID of the TodoList to delete.</param>
         /// <param name="cancellationToken">Cancellation token for the operation.</param>
-        Task DeleteTodoListAsync(string externalId, CancellationToken cancellationToken = default);
+        Task DeleteTodoListAsync(long externalId, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Updates an existing TodoItem in the external API.
@@ -48,7 +48,7 @@ namespace TodoApi.ExternalApi
         /// <param name="request">The update request containing new values.</param>
         /// <param name="cancellationToken">Cancellation token for the operation.</param>
         /// <returns>The updated TodoItem as returned by the external API.</returns>
-        Task<ExternalTodoItem> UpdateTodoItemAsync(string listExternalId, string itemExternalId, UpdateTodoItemRequest request, CancellationToken cancellationToken = default);
+        Task<ExternalTodoItem> UpdateTodoItemAsync(long listExternalId, long itemExternalId, UpdateTodoItemRequest request, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Deletes a TodoItem from the external API.
@@ -56,6 +56,6 @@ namespace TodoApi.ExternalApi
         /// <param name="listExternalId">The external ID of the parent TodoList.</param>
         /// <param name="itemExternalId">The external ID of the TodoItem to delete.</param>
         /// <param name="cancellationToken">Cancellation token for the operation.</param>
-        Task DeleteTodoItemAsync(string listExternalId, string itemExternalId, CancellationToken cancellationToken = default);
+        Task DeleteTodoItemAsync(long listExternalId, long itemExternalId, CancellationToken cancellationToken = default);
     }
 }

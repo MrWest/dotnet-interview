@@ -5,7 +5,7 @@ namespace TodoApi.ExternalApi.Models
     public class ExternalTodoItem
     {
         [JsonPropertyName("id")]
-        public string? Id { get; set; }
+        public long? Id { get; set; }
 
         [JsonPropertyName("source_id")]
         public string? SourceId { get; set; }

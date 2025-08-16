@@ -11,6 +11,7 @@ using TodoApi.ExternalApi.Models;
 using TodoApi.Models;
 using TodoApi.Synchronization;
 using TodoApi.Synchronization.Models;
+using TodoApi.ExternalApi.Models.Requests;
 
 namespace TodoApi.Tests.Integration
 {
@@ -411,7 +412,7 @@ namespace TodoApi.Tests.Integration
             return externalList;
         }
 
-        public async Task UpdateTodoListAsync(long todolistId, UpdateTodoListRequest request, CancellationToken cancellationToken = default)
+        public async Task<ExternalTodoList> UpdateTodoListAsync(long todolistId, UpdateTodoListRequest request, CancellationToken cancellationToken = default)
         {
             await Task.Delay(50, cancellationToken); // Simulate network delay
 
@@ -421,9 +422,11 @@ namespace TodoApi.Tests.Integration
                 existingList.Name = request.Name;
                 existingList.UpdatedAt = DateTime.UtcNow;
             }
+
+            return existingList;
         }
 
-        public async Task UpdateTodoItemAsync(long todolistId, long todoitemId, UpdateTodoItemRequest request, CancellationToken cancellationToken = default)
+        public async Task<ExternalTodoItem> UpdateTodoItemAsync(long todolistId, long todoitemId, UpdateTodoItemRequest request, CancellationToken cancellationToken = default)
         {
             await Task.Delay(50, cancellationToken); // Simulate network delay
 
@@ -437,6 +440,8 @@ namespace TodoApi.Tests.Integration
                 existingItem.Completed = request.Completed;
                 existingItem.UpdatedAt = DateTime.UtcNow;
             }
+
+            return existingItem;
         }
 
         public async Task DeleteTodoListAsync(long todolistId, CancellationToken cancellationToken = default)

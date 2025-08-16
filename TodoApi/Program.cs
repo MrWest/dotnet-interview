@@ -37,3 +37,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
+
+// Make the Program class public for integration testing
+public partial class Program { }
+

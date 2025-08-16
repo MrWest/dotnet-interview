@@ -534,7 +534,7 @@ namespace TodoApi.Synchronization
                         Name = localList.Name
                     };
 
-                    await _externalApiClient.UpdateTodoListAsync(localList.ExternalId, updateRequest, cancellationToken);
+                    await _externalApiClient.UpdateTodoListAsync(long.Parse(localList.ExternalId), updateRequest, cancellationToken);
 
                     localList.LastSyncedAt = DateTime.UtcNow;
                     localList.IsSynced = true;
@@ -562,8 +562,8 @@ namespace TodoApi.Synchronization
                         };
 
                         await _externalApiClient.UpdateTodoItemAsync(
-                            localList.ExternalId,
-                            item.ExternalId,
+                            long.Parse(localList.ExternalId),
+                            long.Parse(item.ExternalId),
                             updateItemRequest,
                             cancellationToken);
 
