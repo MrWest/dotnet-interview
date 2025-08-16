@@ -3,8 +3,8 @@ namespace TodoApi.Models;
 public abstract class SyncItem
 {
     public string? SourceId { get; set; } = null;
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? UpdatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastSyncedAt { get; set; }
     public string? ExternalId { get; set; }
     public bool IsSynced { get; set; } = false;

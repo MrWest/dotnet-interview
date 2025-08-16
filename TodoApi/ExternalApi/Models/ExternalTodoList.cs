@@ -20,6 +20,6 @@ namespace TodoApi.ExternalApi.Models
         public DateTime? UpdatedAt { get; set; }
 
         [JsonPropertyName("items")]
-        public List<ExternalTodoItem> Items { get; set; } = new();
+        public List<ExternalTodoItem> TodoItems { get; set; } = new();
     }
 }

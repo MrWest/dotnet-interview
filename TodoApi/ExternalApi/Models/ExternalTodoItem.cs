@@ -10,6 +10,9 @@ namespace TodoApi.ExternalApi.Models
         [JsonPropertyName("source_id")]
         public string? SourceId { get; set; }
 
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
+
         [JsonPropertyName("description")]
         public string? Description { get; set; }
 

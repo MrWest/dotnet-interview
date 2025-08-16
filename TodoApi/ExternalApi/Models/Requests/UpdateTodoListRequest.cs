@@ -13,6 +13,9 @@ namespace TodoApi.ExternalApi.Models.Requests
         [JsonPropertyName("description")]
         public string? Description { get; set; }
 
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
+
         [JsonPropertyName("completed")]
         public bool? Completed { get; set; }
     }

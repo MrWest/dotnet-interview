@@ -7,6 +7,6 @@ public class TodoListItem: SyncItem
     public TodoList? TodoList { get; set; }
     public required string Name { get; set; }
     public  bool Completed { get; set; } = false;
-     public  int Progress { get; set; } = 0;
+    public  int Progress { get; set; } = 0;
     public required string Description { get; set; }
 }

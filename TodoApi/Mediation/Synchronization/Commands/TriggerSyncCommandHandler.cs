@@ -77,7 +77,7 @@ namespace TodoApi.Mediation.Synchronization.Commands
                 
                 return ServiceResult<TriggerSyncCommandResponse>.Failure(
                     "An error occurred while triggering synchronization",
-                    new List<string> { ex.Message });
+                    400);
             }
         }
     }

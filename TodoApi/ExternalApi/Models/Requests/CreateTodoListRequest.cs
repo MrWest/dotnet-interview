@@ -11,13 +11,16 @@ namespace TodoApi.ExternalApi.Models.Requests
         public string? Name { get; set; }
 
         [JsonPropertyName("items")]
-        public List<CreateTodoItemRequest>? Items { get; set; }
+        public List<CreateTodoItemRequest>? TodoItems { get; set; }
     }
 
     public class CreateTodoItemRequest
     {
         [JsonPropertyName("source_id")]
         public string? SourceId { get; set; }
+
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
 
         [JsonPropertyName("description")]
         public string? Description { get; set; }

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using TodoApi.Data;
 using TodoApi.ExternalApi;
 using TodoApi.ExternalApi.Models;
+using TodoApi.ExternalApi.Models.Requests;
 using TodoApi.Models;
 using TodoApi.Synchronization.Models;
 
@@ -432,7 +433,7 @@ namespace TodoApi.Synchronization
                 {
                     Name = externalItem.Name,
                     Description = externalItem.Description ?? string.Empty,
-                    Completed = externalItem.Completed,
+                    Completed = externalItem.Completed ?? false,
                     Progress = 0, // External API doesn't have progress field
                     TodoListId = parentList.Id,
                     ExternalId = externalItem.Id.ToString(),
@@ -468,13 +469,110 @@ namespace TodoApi.Synchronization
                     // Update local with external data
                     localItem.Name = externalItem.Name;
                     localItem.Description = externalItem.Description ?? string.Empty;
-                    localItem.Completed = externalItem.Completed;
+                    localItem.Completed = externalItem.Completed ?? false;
                     localItem.UpdatedAt = externalItem.UpdatedAt;
                     localItem.LastSyncedAt = DateTime.UtcNow;
                     localItem.IsSynced = true;
 
                     statistics.TodoItemsPulled++;
                     _logger.LogDebug("Updated local TodoItem {LocalId} from external ID {ExternalId}", localItem.Id, externalItem.Id);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Processes a local TodoList and syncs it to external API.
+        /// </summary>
+        private async Task ProcessLocalTodoList(
+            TodoList localList,
+            SyncStatistics statistics,
+            List<SyncConflict> conflicts,
+            CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrEmpty(localList.ExternalId))
+            {
+                // Create new external TodoList
+                var createRequest = new CreateTodoListRequest
+                {
+                    Name = localList.Name,
+                    SourceId = "local-todo-api", // This should come from configuration
+                    TodoItems = localList.Items.Select(item => new CreateTodoItemRequest
+                    {
+                        Name = item.Name,
+                        Description = item.Description,
+                        Completed = item.Completed,
+                        SourceId = "local-todo-api"
+                    }).ToList()
+                };
+
+                var externalList = await _externalApiClient.CreateTodoListAsync(createRequest, cancellationToken);
+
+                localList.ExternalId = externalList.Id.ToString();
+                localList.LastSyncedAt = DateTime.UtcNow;
+                localList.IsSynced = true;
+
+                // Update items with external IDs
+                for (int i = 0; i < localList.Items.Count && i < externalList.TodoItems.Count; i++)
+                {
+                    localList.Items.ElementAt(i).ExternalId = externalList.TodoItems[i].Id.ToString();
+                    localList.Items.ElementAt(i).LastSyncedAt = DateTime.UtcNow;
+                    localList.Items.ElementAt(i).IsSynced = true;
+                }
+
+                statistics.TodoListsPushed++;
+                statistics.TodoItemsPushed += localList.Items.Count;
+
+                _logger.LogDebug("Created external TodoList for local ID {LocalId}", localList.Id);
+            }
+            else
+            {
+                // Update existing external TodoList if needed
+                if (!localList.IsSynced)
+                {
+                    var updateRequest = new UpdateTodoListRequest
+                    {
+                        Name = localList.Name
+                    };
+
+                    await _externalApiClient.UpdateTodoListAsync(localList.ExternalId, updateRequest, cancellationToken);
+
+                    localList.LastSyncedAt = DateTime.UtcNow;
+                    localList.IsSynced = true;
+                    statistics.TodoListsPushed++;
+
+                    _logger.LogDebug("Updated external TodoList {ExternalId} for local ID {LocalId}", localList.ExternalId, localList.Id);
+                }
+
+                // Process items that need syncing
+                foreach (var item in localList.Items.Where(i => !i.IsSynced))
+                {
+                    if (string.IsNullOrEmpty(item.ExternalId))
+                    {
+                        // Note: External API doesn't support creating individual items
+                        // Items can only be created when creating the TodoList
+                        _logger.LogWarning("Cannot create individual TodoItem via external API for item {ItemId}", item.Id);
+                    }
+                    else
+                    {
+                        var updateItemRequest = new UpdateTodoItemRequest
+                        {
+                            Name = item.Name,
+                            Description = item.Description,
+                            Completed = item.Completed
+                        };
+
+                        await _externalApiClient.UpdateTodoItemAsync(
+                            localList.ExternalId,
+                            item.ExternalId,
+                            updateItemRequest,
+                            cancellationToken);
+
+                        item.LastSyncedAt = DateTime.UtcNow;
+                        item.IsSynced = true;
+                        statistics.TodoItemsPushed++;
+
+                        _logger.LogDebug("Updated external TodoItem {ExternalId} for local ID {LocalId}", item.ExternalId, item.Id);
+                    }
                 }
             }
         }
