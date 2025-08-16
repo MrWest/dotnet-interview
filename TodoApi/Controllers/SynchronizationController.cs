@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using TodoApi.Infrastructure;
 using TodoApi.Mediation.Synchronization.Commands;
 using TodoApi.Synchronization;
+using TodoApi.Synchronization.Models;
 
 namespace TodoApi.Controllers
 {
