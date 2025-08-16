@@ -1,6 +1,6 @@
 namespace TodoApi.Models;
 
-public class TodoListItem
+public class TodoListItem: SyncItem
 {
     public long Id { get; set; }
     public long TodoListId { get; set; }

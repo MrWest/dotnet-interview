@@ -2,6 +2,7 @@
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using TodoApi.Infrastructure;
+using TodoApi.Data;
 
 namespace TodoApi.Mediation.TodoList
 { /// <summary>
