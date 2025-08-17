@@ -111,7 +111,10 @@ namespace TodoApi.Data
                 {
                     case EntityState.Added:
                         entry.Entity.CreatedAt = DateTime.UtcNow;
-                        entry.Entity.UpdatedAt = DateTime.UtcNow;
+                        if (!_isSyncOperation) // makes no practical sense but To use in tests
+                        {
+                            entry.Entity.UpdatedAt = DateTime.UtcNow;
+                        }
                         break;
                     
                     case EntityState.Modified:

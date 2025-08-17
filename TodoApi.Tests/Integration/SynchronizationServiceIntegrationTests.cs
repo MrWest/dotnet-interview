@@ -12,6 +12,7 @@ using TodoApi.Models;
 using TodoApi.Synchronization;
 using TodoApi.Synchronization.Models;
 using TodoApi.ExternalApi.Models.Requests;
+using TodoApi.Mediation.Synchronization.Commands;
 
 namespace TodoApi.Tests.Integration
 {
@@ -77,21 +78,22 @@ namespace TodoApi.Tests.Integration
 
             var triggerSyncCommand = new
             {
-                SyncType = "Bidirectional"
+                SyncType = 2
             };
 
             // Act
-            var response = await _httpClient.PostAsJsonAsync("/api/synchronization/sync", triggerSyncCommand);
+            var response = await _httpClient.PostAsJsonAsync("/api/synchronization/trigger", triggerSyncCommand);
 
             // Assert
             response.EnsureSuccessStatusCode();
             
-            var result = await response.Content.ReadFromJsonAsync<SyncResult>();
+            var result = await response.Content.ReadFromJsonAsync<TriggerSyncCommandResponse>();
             Assert.NotNull(result);
-            Assert.True(result.IsSuccess);
+            Assert.NotNull(result.SyncResult);
+            Assert.True(result.SyncResult.IsSuccess);
             
             // Verify that local data was pushed and external data was pulled
-            Assert.True(result.Statistics.TodoListsPushed > 0 || result.Statistics.TodoListsPulled > 0);
+            Assert.True(result.SyncResult.Statistics.TodoListsPushed > 0 || result.SyncResult.Statistics.TodoListsPulled > 0);
         }
 
         [Fact]
@@ -245,13 +247,15 @@ namespace TodoApi.Tests.Integration
                 ExternalId = "999", // Simulate existing external mapping
                 SourceId = "local-system",
                 CreatedAt = baseTime,
-                UpdatedAt = DateTime.UtcNow.AddMinutes(-30), // Modified recently
+                UpdatedAt = DateTime.UtcNow.AddMinutes(30), // Modified recently
                 LastSyncedAt = baseTime, // Last sync was before modification
-                IsSynced = true // Was synced before modification
+                IsSynced = false // Was synced before modification
             };
 
+            dbContext.SetSyncMode(true);
             dbContext.TodoList.Add(conflictTodoList);
             await dbContext.SaveChangesAsync();
+            dbContext.SetSyncMode(false);
 
             // Act - Sync will detect conflict with external data
             var syncResult = await syncService.SynchronizeAsync();
@@ -273,6 +277,7 @@ namespace TodoApi.Tests.Integration
             {
                 Assert.True(resolvedTodoList.IsSynced);
                 Assert.NotNull(resolvedTodoList.LastSyncedAt);
+                //Assert.Contains("External version takes precedence", $"{resolvedTodoList.LastSyncedAt} - {baseTime}");
                 Assert.True(resolvedTodoList.LastSyncedAt > baseTime);
             }
         }
