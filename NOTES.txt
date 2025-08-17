@@ -1,0 +1,985 @@
+                    TODOAPI SYNCHRONIZATION SOLUTION - DESIGN NOTES
+
+
+================================================================================
+1. HIGH-LEVEL OVERVIEW
+================================================================================
+
+PROBLEM STATEMENT:
+Build a robust bidirectional synchronization system between a local TodoAPI and 
+an external Todo API, ensuring data consistency while handling conflicts, 
+failures, and concurrent operations.
+
+SOLUTION APPROACH:
+Implemented an enterprise-grade synchronization service using:
+- CQRS pattern with MediatR for command handling
+- Background services for automated synchronization
+- Semaphore-based concurrency control
+- Last-write-wins conflict resolution
+- Comprehensive error handling and retry mechanisms
+- Transactional consistency with Entity Framework
+
+CORE PHILOSOPHY:
+"Resilience over perfection" - The system prioritizes availability and eventual 
+consistency over strict ACID properties, making it suitable for distributed 
+systems where network partitions and temporary failures are expected.
+
+================================================================================
+2. ARCHITECTURE & COMPONENTS
+================================================================================
+
+LAYERED ARCHITECTURE:
+┌─────────────────────────────────────────────────────────────────┐
+│                    PRESENTATION LAYER                          │
+│  Controllers (SynchronizationController) + MediatR Commands    │
+├─────────────────────────────────────────────────────────────────┤
+│                    APPLICATION LAYER                           │
+│  ISynchronizationService + Background Services + Handlers      │
+├─────────────────────────────────────────────────────────────────┤
+│                    DOMAIN LAYER                                │
+│  TodoList, TodoListItem (SyncItem base) + Business Logic       │
+├─────────────────────────────────────────────────────────────────┤
+│                    INFRASTRUCTURE LAYER                        │
+│  TodoContext (EF Core) + ExternalTodoApiClient + HTTP Client   │
+└─────────────────────────────────────────────────────────────────┘
+
+KEY COMPONENTS:
+
+1. SynchronizationService (Core Engine):
+   - Orchestrates bidirectional sync operations
+   - Manages concurrency with SemaphoreSlim
+   - Handles transactions and error recovery
+   - Provides detailed statistics and conflict tracking
+
+2. Background Services:
+   - SynchronizationBackgroundService: Automated periodic sync
+   - Configurable intervals and retry policies
+   - Health monitoring and failure tracking
+
+3. External API Client:
+   - HTTP-based communication with external Todo API
+   - Retry policies with exponential backoff
+   - Circuit breaker pattern for fault tolerance
+
+4. Data Models:
+   - SyncItem (base class): Common sync properties
+   - TodoList/TodoListItem: Domain entities with sync capabilities
+   - SyncResult: Comprehensive operation results
+
+5. MediatR Integration:
+   - Command/Query separation
+   - Centralized request handling
+   - Cross-cutting concerns (logging, validation)
+
+================================================================================
+3. SYNCHRONIZATION TYPES & STRATEGIES
+================================================================================
+
+SYNC TYPES SUPPORTED:
+
+1. BIDIRECTIONAL SYNC (Default):
+   Purpose: Complete two-way synchronization
+   Process: Pull → Conflict Resolution → Push → Status Update
+   Use Case: Regular scheduled synchronization
+   
+   Flow:
+   ┌─────────┐    ┌──────────────┐    ┌─────────┐
+   │  Pull   │ -> │   Resolve    │ -> │  Push   │
+   │ Changes │    │  Conflicts   │    │ Changes │
+   └─────────┘    └──────────────┘    └─────────┘
+
+2. PULL-ONLY SYNC:
+   Purpose: Import changes from external API only
+   Process: Fetch external data → Apply locally → Resolve conflicts
+   Use Case: Data import scenarios, read-heavy workloads
+   
+3. PUSH-ONLY SYNC:
+   Purpose: Export local changes to external API only
+   Process: Identify local changes → Send to external → Update status
+   Use Case: Data export scenarios, write-heavy workloads
+
+WHY THESE TYPES:
+- Flexibility: Different scenarios require different sync patterns
+- Performance: Unidirectional sync is faster when only one direction is needed
+- Debugging: Easier to isolate issues with directional sync
+- Bandwidth: Reduces unnecessary data transfer
+
+SYNC ITEM TRACKING:
+Each entity inherits from SyncItem providing:
+- ExternalId: Links local and external entities
+- LastSyncedAt: Timestamp of last successful sync
+- IsSynced: Boolean flag indicating sync status
+- SourceId: Identifies the originating system
+
+================================================================================
+4. BACKGROUND SERVICES & SCHEDULING
+================================================================================
+
+SYNCHRONIZATION BACKGROUND SERVICE:
+
+Purpose: Automated, periodic synchronization without manual intervention
+
+Implementation Details:
+```csharp
+public class SynchronizationBackgroundService : BackgroundService
+{
+    private readonly TimeSpan _syncInterval = TimeSpan.FromMinutes(5);
+    private readonly IServiceScopeFactory _scopeFactory;
+    
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            await PerformSyncOperation();
+            await Task.Delay(_syncInterval, stoppingToken);
+        }
+    }
+}
+```
+
+CONFIGURATION OPTIONS:
+
+1. Sync Interval:
+   - Default: 5 minutes
+   - Configurable via appsettings.json
+   - Balances freshness vs. system load
+
+2. Retry Policy:
+   - Exponential backoff: 1s, 2s, 4s, 8s, 16s
+   - Maximum retries: 5 attempts
+   - Circuit breaker after consecutive failures
+
+3. Health Monitoring:
+   - Tracks consecutive failures
+   - Automatic service degradation
+   - Health check endpoints for monitoring
+
+WHY BACKGROUND SERVICES:
+- Automation: Reduces manual intervention
+- Consistency: Regular sync intervals maintain data freshness
+- Resilience: Continues operation despite temporary failures
+- Scalability: Can be deployed across multiple instances
+
+ALTERNATIVE SCHEDULING OPTIONS:
+
+1. Hangfire Integration:
+   - Persistent job storage
+   - Web-based dashboard
+   - Advanced scheduling (cron expressions)
+   - Better for complex scheduling needs
+
+2. Quartz.NET:
+   - Enterprise-grade job scheduling
+   - Clustering support
+   - Misfire handling
+   - Better for high-frequency jobs
+
+3. Azure Functions/AWS Lambda:
+   - Serverless execution
+   - Event-driven triggers
+   - Cost-effective for infrequent sync
+   - Better for cloud-native architectures
+
+CHOSEN APPROACH: Background Services
+Rationale: Simplicity, built-in .NET support, sufficient for most use cases
+
+================================================================================
+5. CONCURRENCY CONTROL & THREAD SAFETY
+================================================================================
+
+SEMAPHORESLIM IMPLEMENTATION:
+
+Purpose: Prevent concurrent synchronization operations that could cause:
+- Data corruption
+- Duplicate API calls
+- Resource contention
+- Inconsistent state
+
+Implementation:
+```csharp
+private readonly SemaphoreSlim _syncSemaphore = new(1, 1); // Only 1 concurrent operation
+
+public async Task<SyncResult> SynchronizeAsync(CancellationToken cancellationToken)
+{
+    if (!await _syncSemaphore.WaitAsync(100, cancellationToken))
+    {
+        return SyncResult.Failure("Another synchronization operation is already in progress");
+    }
+    
+    try
+    {
+        // Perform sync operation
+    }
+    finally
+    {
+        _syncSemaphore.Release(); // Always release
+    }
+}
+```
+
+WHY SEMAPHORESLIM OVER ALTERNATIVES:
+
+1. vs. lock statement:
+   - Async-friendly (lock doesn't support async/await)
+   - Timeout support (prevents indefinite blocking)
+   - Cancellation token support
+
+2. vs. Mutex:
+   - Lighter weight (in-process only)
+   - Better performance
+   - Simpler API
+
+3. vs. ReaderWriterLockSlim:
+   - Simpler use case (no read/write distinction needed)
+   - Sync operations are always exclusive
+
+TIMEOUT STRATEGY:
+- 100ms timeout for sync operations
+- Fast-fail approach prevents queue buildup
+- Immediate feedback to callers
+
+THREAD SAFETY CONSIDERATIONS:
+
+1. Database Context:
+   - Scoped lifetime ensures thread safety
+   - Each operation gets fresh context
+   - No shared state between operations
+
+2. Static State:
+   - SyncStatus is static but thread-safe
+   - Immutable operations only
+   - Atomic updates with proper locking
+
+3. HTTP Client:
+   - Singleton lifetime (thread-safe)
+   - Connection pooling benefits
+   - Proper disposal handling
+
+================================================================================
+6. RESILIENCE & ERROR HANDLING
+================================================================================
+
+POLLY INTEGRATION (Recommended Enhancement):
+
+Current State: Basic try-catch with logging
+Recommended: Polly for advanced resilience patterns
+
+```csharp
+// Retry Policy
+var retryPolicy = Policy
+    .Handle<HttpRequestException>()
+    .Or<TaskCanceledException>()
+    .WaitAndRetryAsync(
+        retryCount: 3,
+        sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
+        onRetry: (outcome, timespan, retryCount, context) =>
+        {
+            _logger.LogWarning("Retry {RetryCount} after {Delay}ms", retryCount, timespan.TotalMilliseconds);
+        });
+
+// Circuit Breaker
+var circuitBreakerPolicy = Policy
+    .Handle<HttpRequestException>()
+    .CircuitBreakerAsync(
+        handledEventsAllowedBeforeBreaking: 5,
+        durationOfBreak: TimeSpan.FromMinutes(1),
+        onBreak: (exception, duration) => _logger.LogError("Circuit breaker opened for {Duration}", duration),
+        onReset: () => _logger.LogInformation("Circuit breaker reset"));
+
+// Combined Policy
+var resilientPolicy = Policy.WrapAsync(retryPolicy, circuitBreakerPolicy);
+```
+
+ERROR HANDLING STRATEGY:
+
+1. Graceful Degradation:
+   - Partial sync success (some entities succeed, others fail)
+   - Detailed error tracking per entity
+   - Continue operation despite individual failures
+
+2. Transactional Consistency:
+   - Database transactions ensure atomicity
+   - Rollback on critical failures
+   - Compensation patterns for external API calls
+
+3. Error Classification:
+   - Transient errors: Network timeouts, temporary API unavailability
+   - Permanent errors: Authentication failures, malformed data
+   - Business errors: Validation failures, constraint violations
+
+4. Recovery Mechanisms:
+   - Automatic retry for transient errors
+   - Manual intervention alerts for permanent errors
+   - Dead letter queue for unprocessable items
+
+FAILURE MODES HANDLED:
+
+1. Network Failures:
+   - Connection timeouts
+   - DNS resolution failures
+   - Intermittent connectivity
+
+2. API Failures:
+   - HTTP 5xx errors (server errors)
+   - HTTP 4xx errors (client errors)
+   - Rate limiting (HTTP 429)
+
+3. Database Failures:
+   - Connection pool exhaustion
+   - Deadlocks and timeouts
+   - Constraint violations
+
+4. Application Failures:
+   - Out of memory exceptions
+   - Serialization errors
+   - Configuration issues
+
+================================================================================
+7. CONFLICT RESOLUTION STRATEGY
+================================================================================
+
+LAST-WRITE-WINS APPROACH:
+
+Philosophy: "The most recent change takes precedence"
+
+Implementation Logic:
+```csharp
+if (externalItem.UpdatedAt > localItem.UpdatedAt)
+{
+    if (localItem.LastSyncedAt.HasValue && localItem.UpdatedAt > localItem.LastSyncedAt.Value)
+    {
+        // CONFLICT DETECTED: Both sides modified since last sync
+        conflicts.Add(new SyncConflict
+        {
+            EntityType = "TodoItem",
+            Resolution = "External version takes precedence (last-write-wins)"
+        });
+    }
+    
+    // Apply external changes (external wins)
+    ApplyExternalChanges(localItem, externalItem);
+}
+```
+
+CONFLICT DETECTION CRITERIA:
+1. External entity is newer than local entity (UpdatedAt comparison)
+2. Local entity was modified since last sync (UpdatedAt > LastSyncedAt)
+3. Both conditions true = conflict detected
+
+WHY LAST-WRITE-WINS:
+
+Advantages:
+- Simple to implement and understand
+- Deterministic outcome
+- No manual intervention required
+- Works well for collaborative editing scenarios
+
+Disadvantages:
+- Data loss potential (earlier changes overwritten)
+- No semantic merge capability
+- May not suit all business scenarios
+
+ALTERNATIVE STRATEGIES CONSIDERED:
+
+1. First-Write-Wins:
+   - Protects original data
+   - Can lead to stale data persistence
+   - Rejected: Less intuitive for users
+
+2. Manual Resolution:
+   - Human decision for each conflict
+   - Most accurate resolution
+   - Rejected: Doesn't scale, requires intervention
+
+3. Semantic Merge:
+   - Field-level conflict resolution
+   - Preserves more data
+   - Rejected: Complex implementation, business logic dependent
+
+4. Vector Clocks:
+   - Tracks causality relationships
+   - Handles concurrent updates better
+   - Rejected: Overkill for this use case
+
+CONFLICT TRACKING:
+- All conflicts are logged with detailed information
+- Statistics track conflict frequency
+- Audit trail for compliance and debugging
+
+================================================================================
+8. PERFORMANCE OPTIMIZATIONS
+================================================================================
+
+DATABASE OPTIMIZATIONS:
+
+1. Efficient Queries:
+   - Include() for eager loading related data
+   - Filtered queries to reduce data transfer
+   - Indexed columns (ExternalId, IsSynced)
+
+2. Batch Operations:
+   - Process multiple entities in single transaction
+   - Reduce database round trips
+   - Bulk update operations where possible
+
+3. Connection Management:
+   - Scoped DbContext lifetime
+   - Connection pooling enabled
+   - Proper disposal patterns
+
+HTTP CLIENT OPTIMIZATIONS:
+
+1. Connection Reuse:
+   - Singleton HttpClient registration
+   - Connection pooling benefits
+   - Reduced TCP overhead
+
+2. Compression:
+   - Gzip compression for large payloads
+   - Reduced bandwidth usage
+   - Faster data transfer
+
+3. Timeout Configuration:
+   - Appropriate timeout values
+   - Prevents hanging operations
+   - Resource cleanup
+
+MEMORY MANAGEMENT:
+
+1. Streaming for Large Datasets:
+   - Process data in chunks
+   - Avoid loading entire dataset in memory
+   - Configurable batch sizes
+
+2. Disposal Patterns:
+   - Using statements for resources
+   - Proper async disposal
+   - Memory leak prevention
+
+CACHING STRATEGIES:
+
+1. In-Memory Caching:
+   - Cache frequently accessed configuration
+   - Reduce database queries
+   - TTL-based invalidation
+
+2. Distributed Caching (Future):
+   - Redis for multi-instance deployments
+   - Shared cache across services
+   - Improved scalability
+
+MONITORING & METRICS:
+
+1. Performance Counters:
+   - Sync operation duration
+   - Entity processing rates
+   - Error frequencies
+
+2. Health Checks:
+   - Database connectivity
+   - External API availability
+   - Service health status
+
+================================================================================
+9. KEY DESIGN DECISIONS & TRADE-OFFS
+================================================================================
+
+DECISION 1: Entity Framework Core vs. Dapper
+
+CHOSEN: Entity Framework Core
+RATIONALE:
+- Rich ORM features (change tracking, migrations)
+- Strong typing and LINQ support
+- Built-in transaction management
+- Easier maintenance and development
+
+TRADE-OFFS:
+- Performance overhead vs. raw SQL
+- Memory usage for change tracking
+- Learning curve for complex scenarios
+
+ALTERNATIVE: Dapper
+- Better performance for read-heavy scenarios
+- More control over SQL generation
+- Rejected: Development speed vs. performance trade-off
+
+---
+
+DECISION 2: Synchronous vs. Asynchronous Processing
+
+CHOSEN: Asynchronous throughout
+RATIONALE:
+- Better scalability and resource utilization
+- Non-blocking I/O operations
+- Improved user experience
+- Modern .NET best practices
+
+TRADE-OFFS:
+- Increased complexity in error handling
+- Debugging challenges
+- Potential for deadlocks if not careful
+
+---
+
+DECISION 3: CQRS with MediatR vs. Direct Service Calls
+
+CHOSEN: CQRS with MediatR
+RATIONALE:
+- Clear separation of concerns
+- Easier testing and mocking
+- Cross-cutting concerns (logging, validation)
+- Scalability for complex operations
+
+TRADE-OFFS:
+- Additional abstraction layer
+- Learning curve for team
+- Slight performance overhead
+
+---
+
+DECISION 4: Background Service vs. External Scheduler
+
+CHOSEN: Background Service
+RATIONALE:
+- Built-in .NET support
+- Simple deployment model
+- Sufficient for current requirements
+- Easy to replace later if needed
+
+TRADE-OFFS:
+- Limited scheduling flexibility
+- No persistence across restarts
+- Single-instance limitation
+
+---
+
+DECISION 5: Optimistic vs. Pessimistic Locking
+
+CHOSEN: Optimistic Locking (timestamp-based)
+RATIONALE:
+- Better performance for low-conflict scenarios
+- Simpler implementation
+- Aligns with distributed system principles
+- No lock management overhead
+
+TRADE-OFFS:
+- Potential for retry storms in high-conflict scenarios
+- Data loss in conflict situations
+- Requires conflict resolution strategy
+
+================================================================================
+10. EDGE CASES & HANDLING
+================================================================================
+
+EDGE CASE 1: Simultaneous Bidirectional Changes
+
+SCENARIO: Same entity modified on both systems simultaneously
+HANDLING:
+- Timestamp comparison with millisecond precision
+- Last-write-wins resolution
+- Conflict logging for audit trail
+- User notification of data loss potential
+
+MITIGATION:
+- Frequent sync intervals reduce conflict window
+- User education on collaborative editing
+- Consider field-level merging for critical data
+
+---
+
+EDGE CASE 2: Network Partition During Sync
+
+SCENARIO: Network fails mid-operation
+HANDLING:
+- Database transactions ensure local consistency
+- Partial sync results tracked
+- Automatic retry on reconnection
+- Idempotent operations prevent duplicates
+
+MITIGATION:
+- Circuit breaker prevents cascade failures
+- Graceful degradation to read-only mode
+- Health checks detect partition scenarios
+
+---
+
+EDGE CASE 3: External API Schema Changes
+
+SCENARIO: External API modifies data structure
+HANDLING:
+- Defensive programming with null checks
+- Graceful handling of missing fields
+- Version detection and adaptation
+- Fallback to previous schema version
+
+MITIGATION:
+- API versioning strategy
+- Contract testing
+- Monitoring for schema drift
+- Backward compatibility requirements
+
+---
+
+EDGE CASE 4: Large Dataset Synchronization
+
+SCENARIO: Thousands of entities to sync
+HANDLING:
+- Batch processing with configurable sizes
+- Progress tracking and resumption
+- Memory-efficient streaming
+- Timeout management
+
+MITIGATION:
+- Incremental sync based on timestamps
+- Pagination for large result sets
+- Background processing for large operations
+- User feedback on progress
+
+---
+
+EDGE CASE 5: Duplicate External IDs
+
+SCENARIO: External system returns duplicate IDs
+HANDLING:
+- Unique constraint enforcement
+- Conflict detection and resolution
+- Data integrity validation
+- Error reporting and logging
+
+MITIGATION:
+- Input validation and sanitization
+- Regular data integrity checks
+- Monitoring for anomalies
+- Coordination with external system owners
+
+---
+
+EDGE CASE 6: Clock Skew Between Systems
+
+SCENARIO: System clocks are not synchronized
+HANDLING:
+- UTC timestamp usage throughout
+- Tolerance window for timestamp comparison
+- Clock skew detection and warning
+- Manual override capabilities
+
+MITIGATION:
+- NTP synchronization requirements
+- Monitoring clock drift
+- Regular time synchronization checks
+- Documentation of time handling
+
+================================================================================
+11. AREAS FOR IMPROVEMENT
+================================================================================
+
+IMMEDIATE IMPROVEMENTS (Next Sprint):
+
+1. Polly Integration:
+   - Add retry policies with exponential backoff
+   - Implement circuit breaker pattern
+   - Add timeout policies for HTTP calls
+   - Estimated effort: 2-3 days
+
+2. Enhanced Logging:
+   - Structured logging with Serilog
+   - Correlation IDs for request tracking
+   - Performance metrics collection
+   - Estimated effort: 1-2 days
+
+3. Configuration Management:
+   - Externalize sync intervals and timeouts
+   - Environment-specific configurations
+   - Runtime configuration updates
+   - Estimated effort: 1 day
+
+SHORT-TERM IMPROVEMENTS (Next Month):
+
+1. Conflict Resolution Options:
+   - Configurable resolution strategies
+   - Field-level conflict detection
+   - Manual resolution workflow
+   - Estimated effort: 1-2 weeks
+
+2. Performance Optimizations:
+   - Implement caching layer
+   - Optimize database queries
+   - Add compression for HTTP calls
+   - Estimated effort: 1 week
+
+3. Monitoring & Alerting:
+   - Health check endpoints
+   - Metrics dashboard
+   - Alert rules for failures
+   - Estimated effort: 1 week
+
+LONG-TERM IMPROVEMENTS (Next Quarter):
+
+1. Event-Driven Architecture:
+   - Replace polling with webhooks
+   - Implement event sourcing
+   - Add message queues for reliability
+   - Estimated effort: 3-4 weeks
+
+2. Multi-Tenant Support:
+   - Tenant isolation
+   - Per-tenant configuration
+   - Scalable data partitioning
+   - Estimated effort: 4-6 weeks
+
+3. Advanced Conflict Resolution:
+   - Three-way merge algorithms
+   - User-defined merge rules
+   - Conflict resolution UI
+   - Estimated effort: 6-8 weeks
+
+SCALABILITY IMPROVEMENTS:
+
+1. Horizontal Scaling:
+   - Stateless service design
+   - Load balancer compatibility
+   - Distributed locking mechanism
+   - Estimated effort: 2-3 weeks
+
+2. Database Optimizations:
+   - Read replicas for queries
+   - Partitioning strategies
+   - Index optimization
+   - Estimated effort: 2-4 weeks
+
+3. Caching Strategy:
+   - Distributed cache (Redis)
+   - Cache invalidation patterns
+   - Cache warming strategies
+   - Estimated effort: 1-2 weeks
+
+================================================================================
+12. ASSUMPTIONS & CONSTRAINTS
+================================================================================
+
+TECHNICAL ASSUMPTIONS:
+
+1. Network Connectivity:
+   - Reliable internet connection available
+   - External API accessible via HTTPS
+   - Firewall rules allow outbound connections
+   - DNS resolution works correctly
+
+2. External API Behavior:
+   - RESTful API with standard HTTP methods
+   - JSON payload format
+   - Consistent response schemas
+   - Reasonable response times (<30 seconds)
+
+3. Data Consistency:
+   - External API maintains data integrity
+   - Timestamps are accurate and consistent
+   - No data corruption during transmission
+   - Unique identifiers remain stable
+
+4. System Resources:
+   - Sufficient memory for data processing
+   - Database storage capacity adequate
+   - CPU resources for background processing
+   - Network bandwidth for data transfer
+
+BUSINESS ASSUMPTIONS:
+
+1. Conflict Resolution:
+   - Last-write-wins is acceptable for business
+   - Data loss in conflicts is tolerable
+   - No regulatory requirements for audit trails
+   - Users understand collaborative editing risks
+
+2. Sync Frequency:
+   - 5-minute intervals meet business needs
+   - Real-time sync not required
+   - Eventual consistency is acceptable
+   - Batch processing is sufficient
+
+3. Error Handling:
+   - Temporary failures are acceptable
+   - Manual intervention available for critical issues
+   - System can operate with partial data
+   - Graceful degradation is preferred
+
+OPERATIONAL CONSTRAINTS:
+
+1. Deployment Environment:
+   - .NET 8.0 runtime available
+   - SQL Server database accessible
+   - Background services can run continuously
+   - Logging infrastructure in place
+
+2. Security Requirements:
+   - HTTPS for all external communications
+   - API keys for authentication
+   - No sensitive data in logs
+   - Standard security headers
+
+3. Monitoring Capabilities:
+   - Basic health checks sufficient
+   - Log aggregation available
+   - Alert mechanisms in place
+   - Performance monitoring tools
+
+EXTERNAL DEPENDENCIES:
+
+1. External Todo API:
+   - Maintains backward compatibility
+   - Provides stable service availability
+   - Supports required operations (CRUD)
+   - Reasonable rate limits
+
+2. Database System:
+   - SQL Server availability and performance
+   - Backup and recovery procedures
+   - Transaction log management
+   - Index maintenance
+
+3. Infrastructure:
+   - Load balancer configuration
+   - SSL certificate management
+   - Network security policies
+   - Monitoring system integration
+
+================================================================================
+13. HOW TO RUN & EXECUTE SYNCHRONIZATION
+================================================================================
+
+PREREQUISITES:
+
+1. Development Environment:
+   - .NET 8.0 SDK installed
+   - SQL Server (LocalDB or full instance)
+   - Visual Studio 2022 or VS Code
+   - Git for source control
+
+STEP-BY-STEP EXECUTION:
+
+1. Database Setup:
+   ```bash
+   # Navigate to project directory
+   cd TodoApi
+   
+   # Create and apply migrations
+   dotnet ef database update
+   
+   # Verify database creation
+   dotnet ef database list
+   ```
+
+2. Application Startup:
+   ```bash
+   # Build the solution
+   dotnet build
+   
+   # Run the application
+   dotnet run --project TodoApi
+   
+   # Application starts on https://localhost:5001
+   ```
+
+3. Manual Synchronization:
+   ```bash
+   # Using curl (Bidirectional sync)
+   curl -X POST https://localhost:5001/api/synchronization/trigger \
+        -H "Content-Type: application/json" \
+        -d '{"Command": "TriggerSync", "SyncType": 0}'
+   
+   # Using curl (Pull only)
+   curl -X POST https://localhost:5001/api/synchronization/trigger \
+        -H "Content-Type: application/json" \
+        -d '{"Command": "TriggerSync", "SyncType": 1}'
+   
+   # Using curl (Push only)
+   curl -X POST https://localhost:5001/api/synchronization/trigger \
+        -H "Content-Type: application/json" \
+        -d '{"Command": "TriggerSync", "SyncType": 2}'
+   ```
+
+4. Monitoring Synchronization:
+   ```bash
+   # Check sync status
+   curl https://localhost:5001/api/synchronization/status
+   
+   # View application logs
+   tail -f logs/todoapi-{date}.log
+   
+   # Monitor background service
+   # Check application logs for "SynchronizationBackgroundService" entries
+   ```
+
+TESTING THE SOLUTION:
+
+1. Unit Tests:
+   ```bash
+   # Run all tests
+   dotnet test
+   
+   # Run specific test category
+   dotnet test --filter "Category=Synchronization"
+   
+   # Run with coverage
+   dotnet test --collect:"XPlat Code Coverage"
+   ```
+
+2. Integration Tests:
+   ```bash
+   # Run integration tests
+   dotnet test --filter "SynchronizationServiceIntegrationTests"
+   
+   # Test with real database
+   dotnet test --filter "EndToEndSync"
+   ```
+
+3. Load Testing:
+   ```bash
+   # Using Apache Bench (install separately)
+   ab -n 100 -c 10 -H "Content-Type: application/json" \
+      -p sync-request.json \
+      https://localhost:5001/api/synchronization/trigger
+   ```
+
+RUN PROJECT:
+
+## Database
+
+The project comes with a devcontainer that provisions a SQL Server database. If you are not going to use the devcontainer, make sure to provision a SQL Server database and
+update the connection string.
+
+## Build
+
+To build the application:
+
+`dotnet build`
+
+## Run the API
+
+To run the TodoApi in your local environment:
+
+`dotnet run --project TodoApi`
+
+## Test
+
+To run tests:
+
+`dotnet test`
+
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================
+
+This documentation provides a comprehensive overview of the TodoAPI synchronization 
+solution, covering all aspects from high-level architecture to detailed 
+implementation decisions. The solution is designed to be robust, scalable, and 
+maintainable while handling the complexities of distributed data synchronization.
+
+For questions or clarifications, please refer to the code comments and unit tests 
+which provide additional implementation details and usage examples.
+
+Last Updated: 16/08/2025
+Version: 1.0
+Author: Enrike Hernandez @MrWest
+
